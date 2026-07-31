@@ -20,7 +20,7 @@ def load_accounts():
 
 # ✅ جلب التوكن من API
 async def fetch_token(session, uid, password):
-    url = f"https://saif-officiel-production.up.railway.app/token?uid={uid}&password={password}"
+    url = f"https://saif-production-531b.up.railway.app/token?uid={uid}&password={password}"
 
     try:
         async with session.get(url, timeout=10) as res:
