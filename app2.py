@@ -11,29 +11,31 @@ app = Flask(__name__)
 
 ACCOUNTS_FILE = 'accounts.json'
 
+
 # ✅ تحميل الحسابات
 def load_accounts():
-    if os.path.exists(ACCOUNTS_FILE):
-        with open(ACCOUNTS_FILE, 'r') as f:
-            return json.load(f)
-    return {}
+    return json.load(open(ACCOUNTS_FILE)) if os.path.exists(ACCOUNTS_FILE) else {}
+
 
 # ✅ جلب التوكن من API
 async def fetch_token(session, uid, password):
-    url = f"https://saif-officiel-production.up.railway.app/token?uid={uid}&password={password}"
-
+    url = f"https://steve-jwt-v3.vercel.app/token?uid={uid}&password={password}"
     try:
         async with session.get(url, timeout=10) as res:
             if res.status == 200:
-                data = await res.json()
-
-                if data.get("status") == "success":
-                    return data.get("token") or data.                        get("jwt_token")
-
-    except Exception:
+                text = await res.text()
+                try:
+                    data = json.loads(text)
+                    if isinstance(data, list) and "token" in data[0]:
+                        return data[0]["token"]
+                    elif isinstance(data, dict) and "token" in data:
+                        return data["token"]
+                except:
+                    return None
+    except:
         return None
-
     return None
+
 
 # ✅ جلب كل التوكنات
 async def get_tokens_live():
@@ -45,6 +47,7 @@ async def get_tokens_live():
         tokens = [token for token in results if token]
     return tokens
 
+
 # ✅ التشفير
 def encrypt_message(plaintext):
     key = b'Yg&tc%DEuh6%Zc^8'
@@ -52,16 +55,19 @@ def encrypt_message(plaintext):
     cipher = AES.new(key, AES.MODE_CBC, iv)
     return binascii.hexlify(cipher.encrypt(pad(plaintext, AES.block_size))).decode()
 
+
 def create_uid_proto(uid):
     pb = uid_generator_pb2.uid_generator()
     pb.saturn_ = int(uid)
     pb.garena = 1
     return pb.SerializeToString()
 
+
 def create_like_proto(uid):
     pb = like_pb2.like()
     pb.uid = int(uid)
     return pb.SerializeToString()
+
 
 def decode_protobuf(binary):
     try:
@@ -71,8 +77,9 @@ def decode_protobuf(binary):
     except DecodeError:
         return None
 
+
 def make_request(enc_uid, token):
-    url = "https://clientbp.ggpolarbear.com/GetPlayerPersonalShow"
+    url = "https://clientbp.ggblueshark.com/GetPlayerPersonalShow"
     headers = {
         'User-Agent': "Dalvik/2.1.0 (Linux; U; Android 9; ASUS_Z01QD Build/PI)",
         'Connection': "Keep-Alive",
@@ -82,7 +89,7 @@ def make_request(enc_uid, token):
         'Expect': "100-continue",
         'X-Unity-Version': "2018.4.11f1",
         'X-GA': "v1 1",
-        'ReleaseVersion': "OB54"
+        'ReleaseVersion': "OB51"
     }
     try:
         res = requests.post(url, data=bytes.fromhex(enc_uid), headers=headers, verify=False)
@@ -90,9 +97,10 @@ def make_request(enc_uid, token):
     except:
         return None
 
-# ✅ إصلاح: إضافة اسم للدالة - send_request
+
+# ✅ إرسال لايك واحد
 async def send_request(enc_uid, token):
-    url = "https://clientbp.ggpolarbear.com/LikeProfile"
+    url = "https://clientbp.ggblueshark.com/LikeProfile"
     headers = {
         'User-Agent': "Dalvik/2.1.0 (Linux; U; Android 9; ASUS_Z01QD Build/PI)",
         'Connection': "Keep-Alive",
@@ -102,21 +110,22 @@ async def send_request(enc_uid, token):
         'Expect': "100-continue",
         'X-Unity-Version': "2018.4.11f1",
         'X-GA': "v1 1",
-        'ReleaseVersion': "OB54"
+        'ReleaseVersion': "OB51"
     }
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.post(url, data=bytes.fromhex(enc_uid), headers=headers, ssl=False) as r:
+            async with session.post(url, data=bytes.fromhex(enc_uid), headers=headers) as r:
                 return r.status
-    except Exception as e:
-        print(f"Error in send_request: {e}")
+    except:
         return None
+
 
 # ✅ إرسال لايكات لكل التوكنات
 async def send_likes(uid, tokens):
     enc_uid = encrypt_message(create_like_proto(uid))
     tasks = [send_request(enc_uid, token) for token in tokens]
     return await asyncio.gather(*tasks)
+
 
 # ✅ نقطة النهاية
 @app.route('/like', methods=['GET'])
@@ -125,55 +134,42 @@ def like_handler():
     if not uid:
         return jsonify({"error": "Missing UID"}), 400
 
-    try:
-        # جلب التوكنات
-        tokens = asyncio.run(get_tokens_live())
-        if not tokens:
-            return jsonify({"error": "No valid tokens available"}), 401
+    tokens = asyncio.run(get_tokens_live())
+    if not tokens:
+        return jsonify({"error": "No valid tokens available"}), 401
 
-        # جلب البيانات قبل الإعجابات
-        enc_uid = encrypt_message(create_uid_proto(uid))
-        before = make_request(enc_uid, tokens[0])
-        if not before:
-            return jsonify({"error": "Failed to retrieve player info"}), 500
+    enc_uid = encrypt_message(create_uid_proto(uid))
+    before = make_request(enc_uid, tokens[0])
+    if not before:
+        return jsonify({"error": "Failed to retrieve player info"}), 500
 
-        before_data = json.loads(MessageToJson(before))
-        likes_before = int(before_data.get("AccountInfo", {}).get("Likes", 0))
-        nickname = before_data.get("AccountInfo", {}).get("PlayerNickname", "Unknown")
+    before_data = json.loads(MessageToJson(before))
+    likes_before = int(before_data.get("AccountInfo", {}).get("Likes", 0))
+    nickname = before_data.get("AccountInfo", {}).get("PlayerNickname", "Unknown")
 
-        # إرسال الإعجابات
-        responses = asyncio.run(send_likes(uid, tokens))
-        success_count = sum(1 for r in responses if r == 200)
+    responses = asyncio.run(send_likes(uid, tokens))
+    success_count = sum(1 for r in responses if r == 200)
 
-        # جلب البيانات بعد الإعجابات
-        after = make_request(enc_uid, tokens[0])
-        likes_after = likes_before  # القيمة الافتراضية إذا فشل الطلب
-        if after:
-            after_data = json.loads(MessageToJson(after))
-            likes_after = int(after_data.get("AccountInfo", {}).get("Likes", 0))
+    after = make_request(enc_uid, tokens[0])
+    likes_after = 0
+    if after:
+        after_data = json.loads(MessageToJson(after))
+        likes_after = int(after_data.get("AccountInfo", {}).get("Likes", 0))
 
-        return jsonify({
-            "PlayerNickname": nickname,
-            "UID": uid,
-            "LikesBefore": likes_before,
-            "LikesAfter": likes_after,
-            "LikesGivenByAPI": likes_after - likes_before,
-            "SuccessfulRequests": success_count,
-            "TotalRequests": len(tokens),
-            "status": 1 if likes_after > likes_before else 2
-        })
+    return jsonify({
+        "PlayerNickname": nickname,
+        "UID": uid,
+        "LikesBefore": likes_before,
+        "LikesAfter": likes_after,
+        "LikesGivenByAPI": likes_after - likes_before,
+        "SuccessfulRequests": success_count,
+        "status": 1 if likes_after > likes_before else 2
+    })
 
-    except Exception as e:
-        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
 
 @app.route('/')
 def home():
-    return jsonify({"status": "online", "message": "Like API is running ✅ "})
+    return jsonify({"status": "online ✅", "message": "Like API running on Render 🚀"})
 
-# ✅ هذا لا يُستخدم في Vercel ولكن نتركه للتشغيل المحلي
-if __name__ == "__main__":
-    import os
-    app.run(
-        host="0.0.0.0",
-        port=int(os.environ.get("PORT", 8080))
-    )
+if __name__ == '__main__':
+    app.run(debug=True)
